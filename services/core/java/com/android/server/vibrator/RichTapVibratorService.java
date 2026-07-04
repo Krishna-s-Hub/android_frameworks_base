@@ -128,6 +128,19 @@ public class RichTapVibratorService {
         }
     }
 
+    public void richTapVibratorOff() {
+        try {
+            IRichtapVibrator service = getRichtapService();
+            if (service != null) {
+                if (DEBUG) Slog.d(TAG, "Executing vibratorOff");
+                service.stop(mCallback);
+                service.off(mCallback);
+            }
+        } catch (Exception e) {
+            Slog.e(TAG, "Failed to execute vibratorOff", e);
+        }
+    }
+
     public void richTapVibratorOnRawPattern(@NonNull int[] pattern, int amplitude, int freq) {
         try {
             IRichtapVibrator service = getRichtapService();

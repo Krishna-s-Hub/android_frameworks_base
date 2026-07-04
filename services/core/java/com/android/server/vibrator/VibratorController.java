@@ -65,7 +65,7 @@ final class VibratorController implements HalVibrator {
     private volatile float mCurrentAmplitude;
 
     @Nullable
-    private RichTapVibratorService mRichTapService;
+    private volatile RichTapVibratorService mRichTapService;
 
     VibratorController(int vibratorId) {
         this(vibratorId, new NativeWrapper());
@@ -345,17 +345,24 @@ final class VibratorController implements HalVibrator {
                     int primitiveId = primitives[0].getPrimitiveId();
                     float scale = primitives[0].getScale();
                     int mappedEffectId;
-                    
-                    if (primitiveId == VibrationEffect.Composition.PRIMITIVE_CLICK) {
-                        mappedEffectId = VibrationEffect.EFFECT_CLICK;
-                    } else if (primitiveId == VibrationEffect.Composition.PRIMITIVE_THUD) {
-                        mappedEffectId = VibrationEffect.EFFECT_THUD;
-                    } else {
-                        mappedEffectId = VibrationEffect.EFFECT_TICK;
+
+                    switch (primitiveId) {
+                        case VibrationEffect.Composition.PRIMITIVE_CLICK:
+                            mappedEffectId = VibrationEffect.EFFECT_CLICK;
+                            break;
+                        case VibrationEffect.Composition.PRIMITIVE_THUD:
+                            mappedEffectId = VibrationEffect.EFFECT_THUD;
+                            break;
+                        case VibrationEffect.Composition.PRIMITIVE_SPIN:
+                            mappedEffectId = VibrationEffect.EFFECT_HEAVY_CLICK;
+                            break;
+                        default:
+                            mappedEffectId = VibrationEffect.EFFECT_TICK;
+                            break;
                     }
                     int[] pattern = RichTapVibrationEffect.getInnerEffect(mappedEffectId);
                     if (pattern != null) {
-                        int baseStrength = RichTapVibrationEffect.getInnerEffectStrength(VibrationEffect.EFFECT_STRENGTH_LIGHT);
+                        int baseStrength = RichTapVibrationEffect.getInnerEffectStrength(VibrationEffect.EFFECT_STRENGTH_MEDIUM);
                         int strength = (int) (baseStrength * scale);
                         if (strength > 10) {
                             mRichTapService.richTapVibratorOnRawPattern(pattern, strength, 0);
@@ -425,6 +432,9 @@ final class VibratorController implements HalVibrator {
         Trace.traceBegin(TRACE_TAG_VIBRATOR, "HalVibrator.off");
         try {
             synchronized (mLock) {
+                if (mRichTapService != null) {
+                    mRichTapService.richTapVibratorOff();
+                }
                 mNativeWrapper.off();
                 updateStateAndNotifyListenersLocked(State.IDLE);
             }
