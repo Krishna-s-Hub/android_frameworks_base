@@ -2993,6 +2993,10 @@
          during initialization when the setting is still null. -->
     <bool name="config_dozeAlwaysOnEnabled">true</bool>
 
+    <!-- The maximum time (in milliseconds) the AOD display will be active.
+         0 means no timeout (AOD stays on indefinitely). -->
+    <integer name="config_dozeAlwaysOnDisplayTimeout">0</integer>
+
     <!-- If AOD can show an ambient version of the wallpaper -->
     <bool name="config_dozeSupportsAodWallpaper">false</bool>
 

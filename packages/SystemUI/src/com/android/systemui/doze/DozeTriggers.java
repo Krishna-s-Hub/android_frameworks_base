@@ -111,6 +111,8 @@ public class DozeTriggers implements DozeMachine.Part {
 
     private long mNotificationPulseTime;
     private Runnable mAodInterruptRunnable;
+    private Runnable mAodTimeoutRunnable;
+    private final android.os.Handler mHandler = new android.os.Handler(android.os.Looper.getMainLooper());
 
     /** see {@link #onProximityFar} prox for callback */
     private boolean mWantProxSensor;
@@ -477,6 +479,11 @@ public class DozeTriggers implements DozeMachine.Part {
 
     @Override
     public void transitionTo(DozeMachine.State oldState, DozeMachine.State newState) {
+        if (mAodTimeoutRunnable != null) {
+            mHandler.removeCallbacks(mAodTimeoutRunnable);
+            mAodTimeoutRunnable = null;
+        }
+
         if (oldState == DOZE_SUSPEND_TRIGGERS && (newState != FINISH
                 && newState != UNINITIALIZED)) {
             // Register callbacks that were unregistered when we switched to
@@ -505,6 +512,12 @@ public class DozeTriggers implements DozeMachine.Part {
                 mInAod = true;
                 if (!sWakeDisplaySensorState) {
                     onWakeScreen(false, newState, DozeLog.REASON_SENSOR_WAKE_UP_PRESENCE);
+                }
+                int aodTimeout = mContext.getResources().getInteger(
+                        com.android.internal.R.integer.config_dozeAlwaysOnDisplayTimeout);
+                if (aodTimeout > 0) {
+                    mAodTimeoutRunnable = () -> mMachine.requestState(DozeMachine.State.DOZE);
+                    mHandler.postDelayed(mAodTimeoutRunnable, aodTimeout);
                 }
                 break;
             case DOZE_AOD_PAUSED:
