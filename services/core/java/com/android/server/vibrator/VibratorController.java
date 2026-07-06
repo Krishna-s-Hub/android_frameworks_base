@@ -362,9 +362,9 @@ final class VibratorController implements HalVibrator {
                     }
                     int[] pattern = RichTapVibrationEffect.getInnerEffect(mappedEffectId);
                     if (pattern != null) {
-                        int baseStrength = RichTapVibrationEffect.getInnerEffectStrength(VibrationEffect.EFFECT_STRENGTH_MEDIUM);
+                        int baseStrength = RichTapVibrationEffect.getInnerEffectStrength(VibrationEffect.EFFECT_STRENGTH_STRONG);
                         int strength = (int) (baseStrength * scale);
-                        if (strength > 10) {
+                        if (strength > 0) {
                             mRichTapService.richTapVibratorOnRawPattern(pattern, strength, 0);
                         }
                     }

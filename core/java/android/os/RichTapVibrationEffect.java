@@ -74,11 +74,11 @@ public final class RichTapVibrationEffect {
     public static int getInnerEffectStrength(int strength) {
         switch (strength) {
             case VibrationEffect.EFFECT_STRENGTH_LIGHT:
-                return 150;
-            case VibrationEffect.EFFECT_STRENGTH_MEDIUM:
                 return 200;
+            case VibrationEffect.EFFECT_STRENGTH_MEDIUM:
+                return 255;
             case VibrationEffect.EFFECT_STRENGTH_STRONG:
-                return 250;
+                return 255;
             default:
                 Slog.e(TAG, "Invalid effect strength: " + strength);
                 return 0;
