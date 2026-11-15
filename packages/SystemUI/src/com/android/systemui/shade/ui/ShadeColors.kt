@@ -87,11 +87,10 @@ object ShadeColors {
 
     @JvmStatic
     private fun shadePanelStandard(context: Context): Int {
-        val layerAbove =
-            context.resources.getColor(com.android.internal.R.color.shade_panel_fg, context.theme)
-        val layerBelow =
-            context.resources.getColor(com.android.internal.R.color.shade_panel_bg, context.theme)
-        return ColorUtils.compositeColors(layerAbove, layerBelow)
+        // RCOS Radiant Glass v0.3
+        // Neutral charcoal at 40% opacity over native background blur.
+        // Avoid wallpaper-derived Monet tint on the unlocked shade.
+        return 0x660C0E12
     }
 
     @JvmStatic
@@ -101,10 +100,10 @@ object ShadeColors {
 
     @JvmStatic
     private fun notificationScrimStandard(context: Context): Int {
-        return ColorUtils.setAlphaComponent(
-            context.getColor(R.color.notification_scrim_base),
-            (0.5f * 255).toInt(),
-        )
+        // RCOS Radiant Glass v0.5
+        // Neutral notification scrim for blur-supported shades.
+        // Preserve the stock ~50% alpha for locked/privacy-sensitive states.
+        return 0x7F0C0E12
     }
 
     @JvmStatic

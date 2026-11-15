@@ -228,7 +228,7 @@ object OverlayShade {
         val ScrimBackground: Color
             @Composable
             @ReadOnlyComposable
-            get() = Color(shadePanelScrimBehind(LocalContext.current))
+            get() = Color(0x330C0E12) // RCOS_RADIANT_GLASS_V07: neutral shared overlay scrim
 
         @Composable
         @ReadOnlyComposable

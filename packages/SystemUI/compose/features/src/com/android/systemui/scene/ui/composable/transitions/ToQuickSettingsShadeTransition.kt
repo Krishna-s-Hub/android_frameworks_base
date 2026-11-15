@@ -39,11 +39,12 @@ fun TransitionBuilder.toQuickSettingsShadeTransition(
         useMechanics = true,
     )
 
-    fractionRange(end = .5f) { fade(OverlayShade.Elements.Scrim) }
-    fractionRange(start = .5f) {
+    fractionRange(end = .65f) { fade(OverlayShade.Elements.Scrim) }
+    // RCOS_RADIANT_MOTION_V01: earlier, smoother header reveal
+    fractionRange(start = .18f, end = .78f) {
         fade(QuickSettingsShade.Elements.StatusBar)
         fade(QuickSettingsShade.Elements.Header)
     }
 }
 
-private val DefaultDuration = 300.milliseconds
+private val DefaultDuration = 360.milliseconds

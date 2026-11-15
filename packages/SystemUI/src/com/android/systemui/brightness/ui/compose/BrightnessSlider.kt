@@ -16,6 +16,7 @@
 
 package com.android.systemui.brightness.ui.compose
 
+import androidx.compose.runtime.mutableFloatStateOf
 import android.content.Context
 import android.view.MotionEvent
 import androidx.annotation.VisibleForTesting
@@ -504,4 +505,50 @@ private suspend fun Animatable<Float, AnimationVector1D>.disappear() =
 object BrightnessSliderMotionTestKeys {
     val ActiveIconAlpha = MotionTestValueKey<Float>("activeIconAlpha")
     val InactiveIconAlpha = MotionTestValueKey<Float>("inactiveIconAlpha")
+}
+
+
+// RCOS vertical brightness: existing SystemUI gamma and policy handling.
+@Composable
+fun RadiantVerticalBrightnessSlider(
+    viewModel: BrightnessSliderViewModel,
+    modifier: Modifier = Modifier,
+) {
+    val gamma = viewModel.currentBrightness.value
+    if (gamma == BrightnessSliderViewModel.initialValue.value) return
+
+    val scope = rememberCoroutineScope()
+    val restriction by viewModel.policyRestriction.collectAsStateWithLifecycle(
+        initialValue = PolicyRestriction.NoRestriction
+    )
+    val overridden by
+        viewModel.brightnessOverriddenByWindow.collectAsStateWithLifecycle()
+
+    var current by remember(gamma) { mutableFloatStateOf(gamma.toFloat()) }
+
+    RadiantVerticalSlider(
+        value = current,
+        valueRange =
+            viewModel.minBrightness.value.toFloat()..
+                viewModel.maxBrightness.value.toFloat(),
+        symbol = "☀",
+        modifier = modifier,
+        enabled = restriction !is PolicyRestriction.Restricted && !overridden,
+        onValueChange = {
+            current = it
+            viewModel.setIsDragging(true)
+            scope.launch {
+                viewModel.onDrag(Drag.Dragging(GammaBrightness(it.toInt())))
+            }
+        },
+        onValueChangeFinished = {
+            viewModel.setIsDragging(false)
+            viewModel.emitBrightnessTouchForFalsing()
+            scope.launch {
+                viewModel.onDrag(
+                    Drag.Stopped(GammaBrightness(current.toInt()))
+                )
+            }
+        },
+    )
 }
