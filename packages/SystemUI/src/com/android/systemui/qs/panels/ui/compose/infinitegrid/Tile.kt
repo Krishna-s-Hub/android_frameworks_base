@@ -525,17 +525,18 @@ object TileMotionTestKeys {
     val Squishness = MotionTestValueKey<Float>("tile_squishiness")
 }
 
+// RCOS_RADIANT_GLASS_V02: neutral translucent QS tile palette
 private object TileDefaults {
     /** An active tile uses the active color as background */
     @Composable
     @ReadOnlyComposable
     fun activeTileColors(): TileColors =
         TileColors(
-            background = MaterialTheme.colorScheme.primary,
-            iconBackground = MaterialTheme.colorScheme.primary,
-            label = MaterialTheme.colorScheme.onPrimary,
-            secondaryLabel = MaterialTheme.colorScheme.onPrimary,
-            icon = MaterialTheme.colorScheme.onPrimary,
+            background = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f),
+            iconBackground = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f),
+            label = MaterialTheme.colorScheme.onSurface,
+            secondaryLabel = MaterialTheme.colorScheme.onSurface,
+            icon = MaterialTheme.colorScheme.onSurface,
         )
 
     /** An active tile with dual target only show the active color on the icon */
@@ -543,19 +544,19 @@ private object TileDefaults {
     @ReadOnlyComposable
     fun activeDualTargetTileColors(): TileColors =
         TileColors(
-            background = LocalAndroidColorScheme.current.surfaceEffect1,
-            iconBackground = MaterialTheme.colorScheme.primary,
+            background = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f),
+            iconBackground = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.24f),
             label = MaterialTheme.colorScheme.onSurface,
             secondaryLabel = MaterialTheme.colorScheme.onSurface,
-            icon = MaterialTheme.colorScheme.onPrimary,
+            icon = MaterialTheme.colorScheme.onSurface,
         )
 
     @Composable
     @ReadOnlyComposable
     fun inactiveDualTargetTileColors(): TileColors =
         TileColors(
-            background = LocalAndroidColorScheme.current.surfaceEffect1,
-            iconBackground = LocalAndroidColorScheme.current.surfaceEffect2,
+            background = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+            iconBackground = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
             label = MaterialTheme.colorScheme.onSurface,
             secondaryLabel = MaterialTheme.colorScheme.onSurface,
             icon = MaterialTheme.colorScheme.onSurface,
@@ -565,7 +566,7 @@ private object TileDefaults {
     @ReadOnlyComposable
     fun inactiveTileColors(): TileColors =
         TileColors(
-            background = LocalAndroidColorScheme.current.surfaceEffect1,
+            background = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
             iconBackground = Color.Transparent,
             label = MaterialTheme.colorScheme.onSurface,
             secondaryLabel = MaterialTheme.colorScheme.onSurface,

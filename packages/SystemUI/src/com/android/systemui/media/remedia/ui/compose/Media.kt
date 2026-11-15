@@ -186,6 +186,8 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height as radiantDpHeight
 
 /**
  * Renders a media controls UI element.
@@ -2001,3 +2003,185 @@ private data class DeviceChipStyle(
     val contentColor: Color,
     val borderColor: Color? = null,
 )
+
+
+// RCOS_RADIANT_MEDIA_V17
+// Compact media module using the existing Remedia session backend.
+@Composable
+fun ContentScope.RadiantMedia(
+    viewModelFactory: MediaViewModel.Factory,
+    behavior: MediaUiBehavior,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val viewModel: MediaViewModel =
+        rememberViewModel("RadiantMedia.viewModel") {
+            viewModelFactory.create(
+                context = context,
+                carouselVisibility = behavior.carouselVisibility,
+            )
+        }
+
+    LaunchedEffect(viewModel) {
+        viewModel.setVisibility { true }
+    }
+
+    val cards = viewModel.cards
+    val card =
+        if (cards.isEmpty()) null
+        else cards.getOrNull(
+            viewModel.currentIndex.coerceIn(0, cards.lastIndex)
+        )
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .clip(RoundedCornerShape(26.dp))
+            .background(Color(0x50242832))
+    ) {
+        if (card == null) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = "Not Playing",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    text = "Radiant Media",
+                    color = Color.White.copy(alpha = 0.60f),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        } else {
+            val artwork = remember(card.background) {
+                (card.background as? Icon.Loaded)?.asImageBitmap()
+            }
+
+            if (artwork != null) {
+                Image(
+                    bitmap = artwork,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color(0xA0101218),
+                                Color(0x60101218),
+                                Color(0xE512141C),
+                            )
+                        )
+                    )
+            )
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Icon(
+                        icon = card.icon,
+                        tint = Color.White,
+                        modifier = Modifier.size(21.dp),
+                    )
+
+                    SecondaryAction(
+                        viewModel = card.outputSwitcherChipButton,
+                        resId = MediaRes.OUTPUT_CHIP,
+                        element = Media.Elements.OutputSwitcherButton,
+                        iconColor = Color.White,
+                    )
+                }
+
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    Text(
+                        text = card.title,
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+
+                    Text(
+                        text = card.subtitle,
+                        color = Color.White.copy(alpha = 0.80f),
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+
+                    val navigation = card.navigation
+
+                    if (navigation is MediaNavigationViewModel.Showing) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .radiantDpHeight(3.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color.White.copy(alpha = .30f)),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(
+                                        navigation.progress
+                                            .takeIf { it.isFinite() }
+                                            ?.coerceIn(0f, 1f) ?: 0f
+                                    )
+                                    .fillMaxHeight()
+                                    .background(Color.White),
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        SecondaryAction(
+                            viewModel = navigation.left,
+                            resId = MediaRes.PREV_BTN,
+                            element = Media.Elements.PrevButton,
+                            iconColor = Color.White,
+                        )
+
+                        if (card.playPauseAction != null) {
+                            PlayPauseAction(
+                                viewModel = card.playPauseAction,
+                                buttonColor = Color.White,
+                                iconColor = Color(0xFF17191F),
+                                buttonCornerRadius = { 24.dp },
+                            )
+                        }
+
+                        SecondaryAction(
+                            viewModel = navigation.right,
+                            resId = MediaRes.NEXT_BTN,
+                            element = Media.Elements.NextButton,
+                            iconColor = Color.White,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}

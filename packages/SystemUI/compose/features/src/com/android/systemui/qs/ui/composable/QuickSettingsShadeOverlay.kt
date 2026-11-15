@@ -16,14 +16,33 @@
 
 package com.android.systemui.qs.ui.composable
 
+import com.android.systemui.brightness.ui.compose.RadiantVerticalSlider
+import com.android.systemui.brightness.ui.compose.RadiantVerticalBrightnessSlider
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.mutableFloatStateOf
+import android.media.AudioManager
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material3.Text
+import com.android.compose.ui.graphics.painter.rememberDrawablePainter
+import com.android.systemui.qs.panels.ui.compose.TileListener
+import com.android.systemui.qs.panels.ui.viewmodel.TileViewModel
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -51,6 +70,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
@@ -123,6 +143,18 @@ import dagger.Lazy
 import javax.inject.Inject
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.Flow
+import com.android.systemui.media.remedia.ui.compose.RadiantMedia
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.key
 
 @SysUISingleton
 class QuickSettingsShadeOverlay
@@ -304,19 +336,18 @@ private fun ContentScope.QuickSettingsContainer(
         transitionSpec = { fadeIn(tween(500)) togetherWith fadeOut(tween(500)) },
     ) { state ->
         when (state) {
+            // RCOS_UNIFIED_EDITOR_V19A
             ShadeBodyState.Editing -> {
-                EditMode(
-                    viewModel = containerViewModel.editModeViewModel,
-                    modifier =
-                        modifier
-                            .fillMaxWidth()
-                            .padding(
-                                horizontal = QuickSettingsShade.Dimensions.HorizontalPadding,
-                                vertical = QuickSettingsShade.Dimensions.VerticalPadding,
-                            ),
+                QuickSettingsLayout(
+                    qsContainerViewModel = containerViewModel,
+                    toolbarViewModelFactory = contentViewModel.toolbarViewModelFactory,
+                    buildNumberViewModelFactory = contentViewModel.buildNumberViewModelFactory,
+                    isTransparencyEnabled = contentViewModel.isTransparencyEnabled,
+                    volumeSliderViewModel = contentViewModel.volumeSliderViewModel,
+                    audioDetailsViewModelFactory = contentViewModel.audioDetailsViewModelFactory,
+                    modifier = modifier.sysuiResTag("quick_settings_panel"),
                 )
             }
-
             ShadeBodyState.TileDetails -> {
                 TileDetails(
                     modifier = modifier,
@@ -386,104 +417,244 @@ private fun ContentScope.QuickSettingsLayout(
 
         VerticalSeparator(QuickSettingsShade.Dimensions.ToolbarBottomPadding)
 
-        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-            Media(
-                viewModelFactory = qsContainerViewModel.mediaViewModelFactory,
-                presentationStyle = MediaPresentationStyle.Compact,
-                behavior = QuickSettingsContainerViewModel.mediaUiBehavior,
-                onDismissed = qsContainerViewModel::onMediaSwipeToDismiss,
-                modifier = Modifier,
-                location = Media.Location.QS,
+
+        // RCOS_MODULAR_CENTER_V15
+        // Independent RCOS Control Center composition.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+        ) {
+            val allTiles =
+                qsContainerViewModel.tileGridViewModel.tileViewModels
+
+            val connectivityOrder = listOf(
+                "wifi", "internet", "bt", "cell", "airplane"
             )
 
-            if (qsContainerViewModel.showMedia) {
-                VerticalSeparator(QuickSettingsShade.Dimensions.VerticalPadding)
+            // Prefer Wi-Fi over the combined Internet tile
+            // when both are available.
+            val wifiTile = allTiles.firstOrNull {
+                it.spec.spec == "wifi"
+            } ?: allTiles.firstOrNull {
+                it.spec.spec == "internet"
             }
 
-            if (qsContainerViewModel.isBrightnessSliderVisible) {
-                Box(
-                    Modifier.systemGestureExclusionInShade(
-                        enabled = { layoutState.transitionState is TransitionState.Idle }
-                    )
-                ) {
-                    BrightnessSliderContainer(
-                        viewModel = qsContainerViewModel.brightnessSliderViewModel,
-                        containerColors =
-                            ContainerColors(
-                                idleColor = Color.Transparent,
-                                mirrorColor =
-                                    OverlayShade.Colors.panelBackground(isTransparencyEnabled),
-                            ),
-                        modifier = Modifier.fillMaxWidth(),
-                        dimensions = QuickSettingsShade.Dimensions.brightnessSliderDimensions,
-                    )
-                }
+            val connectivityTiles = listOfNotNull(
+                wifiTile,
+                allTiles.firstOrNull { it.spec.spec == "bt" },
+                allTiles.firstOrNull { it.spec.spec == "cell" },
+                allTiles.firstOrNull { it.spec.spec == "airplane" },
+            )
+
+            val connectivityIds =
+                connectivityTiles.map { it.spec }.toSet()
+
+
+
+            // Maintain the normal Android QS listening lifecycle.
+            TileListener(allTiles, listeningEnabled = { true })
+
+
+            // RCOS_EDITABLE_GRID_V18
+            val focusTile = allTiles.firstOrNull {
+                it.spec.spec in setOf("modes", "dnd")
             }
 
-            if (volumeSliderViewModel != null) {
-                val volumeSliderState by volumeSliderViewModel.slider.collectAsStateWithLifecycle()
+            val fixedTileSpecs = setOf(
+                "wifi", "internet", "bt", "cell", "airplane"
+            )
 
-                VerticalSeparator(QuickSettingsShade.Dimensions.VolumeSliderExtraPadding)
-                Box(
-                    Modifier.systemGestureExclusionInShade(
-                        enabled = { layoutState.transitionState is TransitionState.Idle }
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        VolumeSlider(
-                            modifier = Modifier.weight(1f),
-                            showLabel = false,
-                            state = volumeSliderState,
-                            onValueChange = { newValue: Float ->
-                                volumeSliderViewModel.onValueChanged(volumeSliderState, newValue)
-                            },
-                            onValueChangeFinished = {
-                                volumeSliderViewModel.onValueChangeFinished()
-                            },
-                            onIconTapped = { volumeSliderViewModel.toggleMuted(volumeSliderState) },
-                            sliderColors = PlatformSliderDefaults.defaultPlatformSliderColors(),
-                            hapticsViewModelFactory =
-                                volumeSliderViewModel.getSliderHapticsViewModelFactory(),
-                            dimensions = QuickSettingsShade.Dimensions.VolumeSliderDimensions,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        IconButton(
-                            modifier =
-                                Modifier.size(
-                                    QuickSettingsShade.Dimensions.VolumeSliderDimensions.trackHeight
-                                ),
-                            colors =
-                                IconButtonDefaults.iconButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                                ),
-                            onClick = {
-                                qsContainerViewModel.detailsViewModel.onVolumeSettingsButtonClicked(
-                                    audioDetailsViewModelFactory.create()
-                                )
-                            },
+            val shortcutTiles = allTiles.filter {
+                it.spec.spec !in fixedTileSpecs &&
+                    it != focusTile
+            }
+
+            val moduleIds = buildList {
+                add("connectivity")
+                add("media")
+                if (focusTile != null) add("focus")
+                add("brightness")
+                add("volume")
+                addAll(
+                    shortcutTiles.map { "tile:" + it.spec.spec }
+                )
+            }
+
+            val radiantContext = LocalContext.current
+            val radiantAudioManager = remember(radiantContext) {
+                radiantContext.getSystemService(
+                    AudioManager::class.java
+                )
+            }
+
+            val radiantMaxVolume = remember(radiantAudioManager) {
+                radiantAudioManager
+                    .getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                    .coerceAtLeast(1)
+            }
+
+            var radiantMediaVolume by remember(radiantAudioManager) {
+                mutableFloatStateOf(
+                    radiantAudioManager.getStreamVolume(
+                        AudioManager.STREAM_MUSIC
+                    ).toFloat()
+                )
+            }
+
+            RadiantEditableGrid(
+                editModeViewModel = qsContainerViewModel.editModeViewModel,
+                availableIds = moduleIds,
+                modifier = Modifier.fillMaxWidth(),
+            ) { moduleId ->
+                when (moduleId) {
+                    "connectivity" -> {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .radiantModuleSurface()
+                                .padding(10.dp),
+                            verticalArrangement =
+                                Arrangement.spacedBy(7.dp),
                         ) {
-                            Icon(
-                                painterResource(R.drawable.ic_more_vert),
-                                // TODO(b/378513663): Update the placeholder content description
-                                contentDescription = "Volume settings",
+                            val wireless = listOfNotNull(
+                                allTiles.firstOrNull {
+                                    it.spec.spec == "wifi"
+                                } ?: allTiles.firstOrNull {
+                                    it.spec.spec == "internet"
+                                },
+                                allTiles.firstOrNull {
+                                    it.spec.spec == "bt"
+                                },
+                                allTiles.firstOrNull {
+                                    it.spec.spec == "cell"
+                                },
+                                allTiles.firstOrNull {
+                                    it.spec.spec == "airplane"
+                                },
+                            )
+
+                            wireless.chunked(2).forEach { rowTiles ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(1f),
+                                    horizontalArrangement =
+                                        Arrangement.spacedBy(7.dp),
+                                ) {
+                                    rowTiles.forEach { tile ->
+                                        RadiantModuleTile(
+                                            tile = tile,
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .fillMaxHeight(),
+                                        )
+                                    }
+                                    repeat(2 - rowTiles.size) {
+                                        Spacer(Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    "media" -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .radiantModuleSurface(),
+                        ) {
+                            RadiantMedia(
+                                viewModelFactory =
+                                    qsContainerViewModel.mediaViewModelFactory,
+                                behavior =
+                                    QuickSettingsContainerViewModel.mediaUiBehavior,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+
+                    "focus" -> {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .radiantModuleSurface()
+                                .padding(7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement =
+                                Arrangement.spacedBy(10.dp),
+                        ) {
+                            if (focusTile != null) {
+                                RadiantModuleTile(
+                                    tile = focusTile,
+                                    modifier = Modifier.size(48.dp),
+                                )
+                            }
+                            Text(
+                                text = "Focus",
+                                color = Color.White,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+
+                    "brightness" -> {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (
+                                qsContainerViewModel
+                                    .isBrightnessSliderVisible
+                            ) {
+                                RadiantVerticalBrightnessSlider(
+                                    viewModel =
+                                        qsContainerViewModel
+                                            .brightnessSliderViewModel,
+                                )
+                            }
+                        }
+                    }
+
+                    "volume" -> {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            RadiantVerticalSlider(
+                                value = radiantMediaVolume,
+                                valueRange =
+                                    0f..radiantMaxVolume.toFloat(),
+                                symbol = "♪",
+                                onValueChange = { value ->
+                                    radiantMediaVolume = value
+                                    radiantAudioManager.setStreamVolume(
+                                        AudioManager.STREAM_MUSIC,
+                                        value.roundToInt(),
+                                        0,
+                                    )
+                                },
+                                onValueChangeFinished = {},
+                            )
+                        }
+                    }
+
+                    else -> {
+                        val tile = shortcutTiles.firstOrNull {
+                            moduleId == "tile:" + it.spec.spec
+                        }
+
+                        if (tile != null) {
+                            RadiantModuleTile(
+                                tile = tile,
+                                modifier = Modifier.fillMaxSize(),
                             )
                         }
                     }
                 }
             }
 
-            VerticalSeparator(QuickSettingsShade.Dimensions.VerticalPadding)
-
             GridAnchor()
-            TileGrid(
-                viewModel = qsContainerViewModel.tileGridViewModel,
-                modifier = Modifier.fillMaxWidth(),
-                enableRevealEffect = TileRevealFlag.isEnabled,
-            )
 
             val buildNumberViewModel =
                 rememberViewModel("QuickSettingsShadeOverlay.BuildNumber") {
@@ -504,6 +675,125 @@ private fun ContentScope.QuickSettingsLayout(
         }
     }
 }
+
+
+
+// RCOS_MODULAR_CENTER_V15
+// Shared glass surface for independent Control Center modules.
+private fun Modifier.radiantModuleSurface(): Modifier =
+    this
+        .clip(RoundedCornerShape(27.dp))
+        .background(Color(0x44272D36))
+        .border(
+            1.dp,
+            Color.White.copy(alpha = 0.10f),
+            RoundedCornerShape(27.dp),
+        )
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun RadiantModuleTile(
+    tile: TileViewModel,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val state by tile.state.collectAsStateWithLifecycle(
+        initialValue = tile.currentState
+    )
+
+    val active =
+        state.state == android.service.quicksettings.Tile.STATE_ACTIVE
+
+    val available =
+        state.state != android.service.quicksettings.Tile.STATE_UNAVAILABLE
+
+    val spec = tile.spec.spec.lowercase()
+
+    val activeBackground = when (spec) {
+        "wifi", "internet", "bt" -> Color(0xFF3478F6)
+        "airplane" -> Color(0xFFFF9F0A)
+        "cell" -> Color(0xFF32C76A)
+        else -> Color(0xFFE8EBF2)
+    }
+
+    val background =
+        if (active) activeBackground else Color(0x55323843)
+
+    val foreground =
+        if (active && spec !in setOf(
+                "wifi", "internet", "bt", "airplane", "cell"
+            )
+        ) {
+            Color(0xFF20242C)
+        } else {
+            Color.White
+        }
+
+    val drawable = remember(state.icon, context) {
+        state.icon?.getDrawable(context)
+    }
+
+    val title = state.label?.toString() ?: tile.spec.spec
+
+    Box(
+        modifier = modifier
+            .clip(CircleShape)
+            .background(background)
+            .border(
+                1.dp,
+                Color.White.copy(alpha = .12f),
+                CircleShape,
+            )
+            .combinedClickable(
+                enabled = available,
+                // RCOS_WIRELESS_DIALOG_FIX_V16
+                // These controls may open dialogs. Our custom circular
+                // renderer does not provide a valid TransitionSource.
+                onClick = {
+                    if (spec in setOf("wifi", "internet", "bt")) {
+                        tile.mainClick(null)
+                    } else {
+                        tile.mainClick(tile.expandable)
+                    }
+                },
+                onLongClick = {
+                    if (spec in setOf("wifi", "internet", "bt")) {
+                        tile.settingsClick(null)
+                    } else {
+                        tile.settingsClick(tile.expandable)
+                    }
+                },
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (drawable != null) {
+            Icon(
+                painter = rememberDrawablePainter(drawable),
+                contentDescription = title,
+                tint = foreground,
+                modifier = Modifier.size(29.dp),
+            )
+        } else {
+            Text(
+                text = title.take(1),
+                color = foreground,
+            )
+        }
+    }
+}
+
+// RCOS_IOS26_CONTROL_CENTER_V09
+// Neutral glass module surface; native window blur remains separate.
+private fun Modifier.radiantGlassCard(): Modifier =
+    this
+        .clip(RoundedCornerShape(28.dp))
+        .background(Color(0x38232930))
+        .border(
+            width = 1.dp,
+            color = Color.White.copy(alpha = 0.12f),
+            shape = RoundedCornerShape(28.dp),
+        )
+        .padding(12.dp)
 
 @Composable
 private fun VerticalSeparator(height: Dp) {
@@ -653,6 +943,484 @@ object QuickSettingsShade {
                             height = layoutCoordinates.size.height.toFloat(),
                         ),
                 )
+            }
+        }
+    }
+}
+
+
+// RCOS_EDITABLE_GRID_V18
+// Persistent, movable and resizable Radiant Control Center modules.
+private data class RadiantGridEntry(
+    val id: String,
+    val columns: Int,
+    val rows: Int,
+)
+
+private fun radiantDefaultEntry(id: String): RadiantGridEntry =
+    when (id) {
+        "connectivity", "media" ->
+            RadiantGridEntry(id, 2, 2)
+        "focus" ->
+            RadiantGridEntry(id, 2, 1)
+        "brightness", "volume" ->
+            RadiantGridEntry(id, 1, 2)
+        else ->
+            RadiantGridEntry(id, 1, 1)
+    }
+
+@Composable
+private fun RadiantEditableGrid(
+    editModeViewModel:
+        com.android.systemui.qs.panels.ui.viewmodel.EditModeViewModel,
+    availableIds: List<String>,
+    modifier: Modifier = Modifier,
+    content: @Composable (String) -> Unit,
+) {
+    val context = LocalContext.current
+    val preferences = remember(context) {
+        context.getSharedPreferences(
+            "rcos_radiant_grid_v18",
+            android.content.Context.MODE_PRIVATE,
+        )
+    }
+
+    val availableKey = availableIds.joinToString("|")
+
+    val entries = remember(availableKey) {
+        val saved = preferences.getString("layout", null)
+
+        val restored = saved
+            ?.split("|")
+            ?.mapNotNull { token ->
+                val fields = token.split(";")
+                if (fields.size != 3) return@mapNotNull null
+
+                val id = fields[0]
+                val cols = fields[1].toIntOrNull()
+                    ?: return@mapNotNull null
+                val rows = fields[2].toIntOrNull()
+                    ?: return@mapNotNull null
+
+                if (id !in availableIds) return@mapNotNull null
+
+                RadiantGridEntry(
+                    id,
+                    cols.coerceIn(1, 4),
+                    rows.coerceIn(1, 4),
+                )
+            }
+            .orEmpty()
+            .distinctBy { it.id }
+
+        val hidden = preferences.getStringSet(
+            "hidden",
+            emptySet<String>(),
+        ).orEmpty()
+
+        mutableStateListOf<RadiantGridEntry>().apply {
+            addAll(restored)
+
+            availableIds.forEach { id ->
+                if (
+                    none { it.id == id } &&
+                    id !in hidden
+                ) {
+                    add(radiantDefaultEntry(id))
+                }
+            }
+        }
+    }
+
+    val editing by editModeViewModel.isEditing
+        .collectAsStateWithLifecycle()
+
+    var showAddMenu by remember {
+        mutableStateOf(false)
+    }
+
+    val hiddenIds = availableIds.filter { id ->
+        entries.none { it.id == id }
+    }
+
+    fun saveLayout() {
+        preferences.edit()
+            .putString(
+                "layout",
+                entries.joinToString("|") {
+                    "${it.id};${it.columns};${it.rows}"
+                },
+            )
+            .putStringSet(
+                "hidden",
+                availableIds.filter { id ->
+                    entries.none { it.id == id }
+                }.toSet(),
+            )
+            .apply()
+    }
+
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = if (editing) {
+                    "Edit and sort"
+                } else {
+                    "Radiant Controls"
+                },
+                color = Color.White,
+                style = MaterialTheme.typography.titleLarge,
+            )
+
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(30.dp))
+                    .background(Color(0x44FFFFFF))
+                    .clickable {
+                        if (editing) {
+                            saveLayout()
+                            editModeViewModel.stopEditing()
+                        } else {
+                            editModeViewModel.startEditing()
+                        }
+                    }
+                    .padding(
+                        horizontal = 17.dp,
+                        vertical = 8.dp,
+                    ),
+            ) {
+                Text(
+                    text = if (editing) "✓" else "+",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
+        }
+
+        val gapPx = with(LocalDensity.current) {
+            9.dp.roundToPx()
+        }
+
+        val approximateCellPx = with(LocalDensity.current) {
+            90.dp.toPx()
+        }
+
+        Layout(
+            content = {
+                entries.forEach { entry ->
+                    key(entry.id) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            content(entry.id)
+
+                            if (editing) {
+                                var dragOffset by remember(entry.id) {
+                                    mutableStateOf(Offset.Zero)
+                                }
+
+                                // The transparent overlay intercepts
+                                // interactions only in Edit Mode.
+                                Box(
+                                    modifier = Modifier
+                                        .matchParentSize()
+                                        .pointerInput(entry.id, editing) {
+                                            detectDragGestures(
+                                                onDragStart = {
+                                                    dragOffset = Offset.Zero
+                                                },
+                                                onDrag = { change, amount ->
+                                                    change.consume()
+                                                    dragOffset += amount
+                                                },
+                                                onDragEnd = {
+                                                    val shift =
+                                                        (dragOffset.x /
+                                                            approximateCellPx)
+                                                            .roundToInt() +
+                                                        (
+                                                            dragOffset.y /
+                                                                approximateCellPx
+                                                        ).roundToInt() * 4
+
+                                                    val index =
+                                                        entries.indexOfFirst {
+                                                            it.id == entry.id
+                                                        }
+
+                                                    if (index >= 0 && shift != 0) {
+                                                        val target =
+                                                            (index + shift)
+                                                                .coerceIn(
+                                                                    0,
+                                                                    entries.lastIndex,
+                                                                )
+
+                                                        val moving =
+                                                            entries.removeAt(index)
+
+                                                        entries.add(
+                                                            target,
+                                                            moving,
+                                                        )
+
+                                                        saveLayout()
+                                                    }
+
+                                                    dragOffset = Offset.Zero
+                                                },
+                                            )
+                                        },
+                                )
+
+                                // Remove control.
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopStart)
+                                        .size(24.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFFF1F1F5))
+                                        .clickable {
+                                            entries.removeAll {
+                                                it.id == entry.id
+                                            }
+                                            saveLayout()
+                                        },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        "−",
+                                        color = Color.Black,
+                                    )
+                                }
+
+                                // Resize handle: drag outward or inward.
+                                var resizeOffset by remember(entry.id) {
+                                    mutableStateOf(Offset.Zero)
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .size(31.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xBBDDDAE5))
+                                        .pointerInput(entry.id) {
+                                            detectDragGestures(
+                                                onDragStart = {
+                                                    resizeOffset = Offset.Zero
+                                                },
+                                                onDrag = { change, amount ->
+                                                    change.consume()
+                                                    resizeOffset += amount
+                                                },
+                                                onDragEnd = {
+                                                    val dx =
+                                                        (resizeOffset.x /
+                                                            approximateCellPx)
+                                                            .roundToInt()
+                                                    val dy =
+                                                        (resizeOffset.y /
+                                                            approximateCellPx)
+                                                            .roundToInt()
+
+                                                    val index =
+                                                        entries.indexOfFirst {
+                                                            it.id == entry.id
+                                                        }
+
+                                                    if (index >= 0) {
+                                                        val old = entries[index]
+
+                                                        entries[index] =
+                                                            old.copy(
+                                                                columns =
+                                                                    (old.columns + dx)
+                                                                        .coerceIn(1, 4),
+                                                                rows =
+                                                                    (old.rows + dy)
+                                                                        .coerceIn(1, 4),
+                                                            )
+                                                        saveLayout()
+                                                    }
+
+                                                    resizeOffset = Offset.Zero
+                                                },
+                                            )
+                                        },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        "↘",
+                                        color = Color(0xFF24242B),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) { measurables, constraints ->
+            val width = constraints.maxWidth
+            val cellSize = (
+                (width - 3 * gapPx) / 4
+            ).coerceAtLeast(1)
+
+            val occupied = ArrayList<BooleanArray>()
+            val positions = ArrayList<Pair<Int, Int>>()
+
+            fun ensureRows(count: Int) {
+                while (occupied.size < count) {
+                    occupied.add(BooleanArray(4))
+                }
+            }
+
+            entries.forEach { entry ->
+                val spanX = entry.columns.coerceIn(1, 4)
+                val spanY = entry.rows.coerceIn(1, 4)
+
+                var positionX = 0
+                var positionY = 0
+                var placed = false
+
+                for (y in 0..200) {
+                    ensureRows(y + spanY)
+
+                    for (x in 0..(4 - spanX)) {
+                        var fits = true
+
+                        for (yy in y until y + spanY) {
+                            for (xx in x until x + spanX) {
+                                if (occupied[yy][xx]) {
+                                    fits = false
+                                }
+                            }
+                        }
+
+                        if (fits) {
+                            positionX = x
+                            positionY = y
+                            placed = true
+                            break
+                        }
+                    }
+
+                    if (placed) break
+                }
+
+                for (yy in positionY until positionY + spanY) {
+                    for (xx in positionX until positionX + spanX) {
+                        occupied[yy][xx] = true
+                    }
+                }
+
+                positions.add(positionX to positionY)
+            }
+
+            val placeables = measurables.mapIndexed { index, measurable ->
+                val entry = entries[index]
+
+                val childWidth =
+                    cellSize * entry.columns +
+                    gapPx * (entry.columns - 1)
+
+                val childHeight =
+                    cellSize * entry.rows +
+                    gapPx * (entry.rows - 1)
+
+                measurable.measure(
+                    Constraints.fixed(
+                        childWidth,
+                        childHeight,
+                    )
+                )
+            }
+
+            val usedRows = entries.indices.maxOfOrNull { index ->
+                positions[index].second + entries[index].rows
+            } ?: 0
+
+            val gridHeight = (
+                usedRows * cellSize +
+                    (usedRows - 1).coerceAtLeast(0) * gapPx
+            ).coerceAtLeast(0)
+
+            layout(width, gridHeight) {
+                placeables.forEachIndexed { index, placeable ->
+                    val (x, y) = positions[index]
+
+                    placeable.placeRelative(
+                        x * (cellSize + gapPx),
+                        y * (cellSize + gapPx),
+                    )
+                }
+            }
+        }
+
+        if (editing) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 24.dp, bottom = 24.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box {
+                    Text(
+                        text = "⊕  Add a Control",
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(24.dp))
+                            .clickable {
+                                showAddMenu = true
+                            }
+                            .padding(12.dp),
+                        color = Color.White,
+                    )
+
+                    DropdownMenu(
+                        expanded = showAddMenu,
+                        onDismissRequest = {
+                            showAddMenu = false
+                        },
+                    ) {
+                        if (hiddenIds.isEmpty()) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text("No hidden layout modules")
+                                },
+                                onClick = {
+                                    showAddMenu = false
+                                },
+                            )
+                        }
+
+                        hiddenIds.forEach { id ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        id.removePrefix("tile:")
+                                            .replaceFirstChar {
+                                                it.uppercase()
+                                            }
+                                    )
+                                },
+                                onClick = {
+                                    entries.add(
+                                        radiantDefaultEntry(id)
+                                    )
+                                    saveLayout()
+                                    showAddMenu = false
+                                },
+                            )
+                        }
+                    }
+                }
             }
         }
     }

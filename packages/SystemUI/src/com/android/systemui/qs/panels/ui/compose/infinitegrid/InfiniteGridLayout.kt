@@ -16,6 +16,29 @@
 
 package com.android.systemui.qs.panels.ui.compose.infinitegrid
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
+import androidx.compose.ui.text.style.TextOverflow
+import com.android.compose.ui.graphics.painter.rememberDrawablePainter
+import com.android.systemui.plugins.qs.QSTile
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -99,38 +122,86 @@ constructor(
 
         val bounceables =
             remember(sizedTiles) { List(sizedTiles.size) { BounceableTileViewModel() } }
-        val spans by remember(sizedTiles) { derivedStateOf { sizedTiles.fastMap { it.width } } }
-        VerticalSpannedGrid(
-            columns = columns,
-            columnSpacing = dimensionResource(R.dimen.qs_tile_margin_horizontal),
-            rowSpacing = dimensionResource(R.dimen.qs_tile_margin_vertical),
-            spans = spans,
-            keys = { sizedTiles[it].tile.spec },
-            modifier = modifier,
-        ) { spanIndex, column, isFirstInColumn, isLastInColumn ->
-            val it = sizedTiles[spanIndex]
 
-            Element(it.tile.spec.toElementKey(), Modifier) {
-                Tile(
-                    tile = it.tile,
-                    iconOnly = iconTilesViewModel.isIconTile(it.tile.spec),
-                    squishiness = { squishiness },
-                    tileHapticsViewModelFactory = tileHapticsViewModelFactory,
-                    coroutineScope = scope,
-                    bounceableInfo =
-                        bounceables.bounceableInfo(
-                            it,
-                            index = spanIndex,
-                            column = column,
-                            columns = columns,
-                            isFirstInRow = isFirstInColumn,
-                            isLastInRow = isLastInColumn,
-                        ),
-                    detailsViewModel = detailsViewModel,
-                    isVisible = listening,
-                    requestToggleTextFeedback = textFeedbackViewModel::requestShowFeedback,
-                    enableRevealEffect = enableRevealEffect,
-                )
+
+        // RCOS_MODULAR_TILES_V14
+        // Layout only. The original QSTile objects remain the control backend.
+        val connectivityOrder = listOf(
+            "internet", "wifi", "bt", "cell", "airplane"
+        )
+
+        val connectivityTiles = connectivityOrder.mapNotNull { spec ->
+            tiles.firstOrNull {
+                it.spec.spec.equals(spec, ignoreCase = true)
+            }
+        }
+
+        val connectivityIds = connectivityTiles.map { it.spec }.toSet()
+        val shortcutTiles = tiles.filter { it.spec !in connectivityIds }
+
+        Column(modifier = modifier) {
+            if (connectivityTiles.isNotEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(30.dp))
+                        .background(Color(0x302A2D36))
+                        .border(
+                            1.dp,
+                            Color.White.copy(alpha = 0.10f),
+                            RoundedCornerShape(30.dp)
+                        )
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        text = "Connectivity",
+                        color = Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier.padding(
+                            start = 4.dp, bottom = 2.dp
+                        )
+                    )
+
+                    connectivityTiles.chunked(2).forEach { rowTiles ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            rowTiles.forEach { tile ->
+                                RadiantTileButton(
+                                    tile = tile,
+                                    compact = false,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            if (rowTiles.size == 1) {
+                                Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(18.dp))
+            }
+
+            shortcutTiles.chunked(4).forEach { rowTiles ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    rowTiles.forEach { tile ->
+                        RadiantTileButton(
+                            tile = tile,
+                            compact = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    repeat(4 - rowTiles.size) {
+                        Spacer(Modifier.weight(1f))
+                    }
+                }
             }
         }
 
@@ -233,6 +304,92 @@ constructor(
                     onSetTiles(action.tileSpecs)
                 }
             }
+        }
+    }
+}
+
+
+// RCOS_MODULAR_TILES_V14
+// Native RCOS presentation over existing Android QSTile actions.
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun RadiantTileButton(
+    tile: TileViewModel,
+    compact: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val state by tile.state.collectAsStateWithLifecycle(
+        initialValue = tile.currentState
+    )
+
+    val active = state.state == android.service.quicksettings.Tile.STATE_ACTIVE
+    val available = state.state != android.service.quicksettings.Tile.STATE_UNAVAILABLE
+
+    val background =
+        if (active) Color(0xA5E9EFFA)
+        else Color(0x49333943)
+
+    val foreground =
+        if (active) Color(0xFF202630)
+        else Color.White
+
+    val shape = RoundedCornerShape(
+        if (compact) 100.dp else 25.dp
+    )
+
+    val drawable = remember(state.icon, context) {
+        state.icon?.getDrawable(context)
+    }
+
+    val label = state.label?.toString()
+        ?: tile.spec.spec
+
+    val tileModifier = modifier
+        .then(
+            if (compact) Modifier.height(72.dp)
+            else Modifier.height(82.dp)
+        )
+        .clip(shape)
+        .background(background)
+        .border(
+            1.dp,
+            Color.White.copy(alpha = if (active) 0.20f else 0.09f),
+            shape,
+        )
+        .combinedClickable(
+            enabled = available,
+            onClick = { tile.mainClick(tile.expandable) },
+            onLongClick = { tile.settingsClick(tile.expandable) },
+        )
+
+    Row(
+        modifier = tileModifier.padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        if (drawable != null) {
+            Icon(
+                painter = rememberDrawablePainter(drawable),
+                contentDescription = label,
+                tint = foreground,
+                modifier = Modifier.size(27.dp),
+            )
+        } else {
+            Text(
+                text = label.take(1),
+                color = foreground,
+            )
+        }
+
+        if (!compact) {
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = label,
+                color = foreground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

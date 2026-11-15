@@ -342,7 +342,12 @@ public enum ScrimState {
             } else if (Flags.notificationShadeBlur()) {
                 mBehindTint = mShadePanelColor;
                 mBehindAlpha = getColorAlpha(mBehindTint);
-                mNotifTint = mNotificationScrimColor;
+                // RCOS Radiant Glass v0.4:
+                // The blur-supported standard notification scrim uses alpha 127.
+                // Replace only that tinted surface with neutral glass.
+                // Preserve the fallback color if its alpha differs.
+                mNotifTint = Color.alpha(mNotificationScrimColor) == 127
+                        ? 0x330C0E12 : mNotificationScrimColor;
                 mNotifAlpha = getColorAlpha(mNotifTint);
                 mFrontAlpha = 0.0f;
                 return;
@@ -366,7 +371,12 @@ public enum ScrimState {
         public void setNotificationScrimColor(int notificationScrimColor) {
             super.setNotificationScrimColor(notificationScrimColor);
             if (Flags.notificationShadeBlur()) {
-                mNotifTint = mNotificationScrimColor;
+                // RCOS Radiant Glass v0.4:
+                // The blur-supported standard notification scrim uses alpha 127.
+                // Replace only that tinted surface with neutral glass.
+                // Preserve the fallback color if its alpha differs.
+                mNotifTint = Color.alpha(mNotificationScrimColor) == 127
+                        ? 0x330C0E12 : mNotificationScrimColor;
                 mNotifAlpha = getColorAlpha(mNotifTint);
             }
         }
