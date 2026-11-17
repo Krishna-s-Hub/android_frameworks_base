@@ -49,9 +49,11 @@ constructor(
                                 input.data is FlashlightModel.Available.Level
                         ) {
                             // Note: no Click response for Binary state. See ToggleClick.
-                            flashlightInteractor.get().setEnabled(true)
-                            // the ui code runs on the main thread
-                            flashlightDialogDelegate.get().showDialog(input.action.expandable)
+                            // RCOS_FLASHLIGHT_ACTIONS_V19C
+                            // Tap toggles the flashlight on or off.
+                            flashlightInteractor.get().setEnabled(
+                                !input.data.enabled
+                            )
                         } else if (
                             !ActivityManager.isUserAMonkey() &&
                                 input.data is FlashlightModel.Available
@@ -76,7 +78,16 @@ constructor(
                         flashlightInteractor.get().setEnabled(!data.enabled)
                     }
                 }
-                is QSTileUserAction.LongClick -> {}
+                is QSTileUserAction.LongClick -> {
+                    if (
+                        FlashlightStrength.isEnabled &&
+                            !ActivityManager.isUserAMonkey() &&
+                            data is FlashlightModel.Available.Level
+                    ) {
+                        flashlightInteractor.get().setEnabled(true)
+                        flashlightDialogDelegate.get().showDialog(null)
+                    }
+                }
             }
         }
 }

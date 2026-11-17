@@ -97,7 +97,7 @@ constructor(
 
     override fun newTileState(): BooleanState {
         val state = BooleanState()
-        state.handlesLongClick = false
+        state.handlesLongClick = true
         return state
     }
 

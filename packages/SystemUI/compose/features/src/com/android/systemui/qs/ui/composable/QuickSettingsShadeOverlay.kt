@@ -16,6 +16,7 @@
 
 package com.android.systemui.qs.ui.composable
 
+import androidx.compose.foundation.layout.heightIn
 import com.android.systemui.brightness.ui.compose.RadiantVerticalSlider
 import com.android.systemui.brightness.ui.compose.RadiantVerticalBrightnessSlider
 import androidx.compose.ui.platform.LocalContext
@@ -320,21 +321,23 @@ private fun ContentScope.QuickSettingsContainer(
         focusRequester.requestFocus()
     }
 
-    AnimatedContent(
+    // RCOS_EDITOR_SCENE_FIX_V19B
+    // Never compose two instances of scene-keyed QS elements
+    // during the transition into Radiant Edit Mode.
+    val state = when {
+        isEditing -> ShadeBodyState.Editing
+        tileDetails != null -> ShadeBodyState.TileDetails
+        else -> ShadeBodyState.Default
+    }
+
+    Box(
         modifier =
             Modifier.focusRequester(focusRequester)
                 .focusable()
                 .onLayoutRectChanged { currentHeight = it.height }
                 .semantics { paneTitle = accessibilityTitle }
                 .sysuiResTag("quick_settings_container"),
-        targetState =
-            when {
-                isEditing -> ShadeBodyState.Editing
-                tileDetails != null -> ShadeBodyState.TileDetails
-                else -> ShadeBodyState.Default
-            },
-        transitionSpec = { fadeIn(tween(500)) togetherWith fadeOut(tween(500)) },
-    ) { state ->
+    ) {
         when (state) {
             // RCOS_UNIFIED_EDITOR_V19A
             ShadeBodyState.Editing -> {
@@ -750,14 +753,14 @@ private fun RadiantModuleTile(
                 // These controls may open dialogs. Our custom circular
                 // renderer does not provide a valid TransitionSource.
                 onClick = {
-                    if (spec in setOf("wifi", "internet", "bt")) {
+                    if (spec in setOf("wifi", "internet", "bt", "flashlight")) {
                         tile.mainClick(null)
                     } else {
                         tile.mainClick(tile.expandable)
                     }
                 },
                 onLongClick = {
-                    if (spec in setOf("wifi", "internet", "bt")) {
+                    if (spec in setOf("wifi", "internet", "bt", "flashlight")) {
                         tile.settingsClick(null)
                     } else {
                         tile.settingsClick(tile.expandable)
@@ -1039,8 +1042,16 @@ private fun RadiantEditableGrid(
         mutableStateOf(false)
     }
 
+    // RCOS_NATIVE_CATALOG_V19C
+    val catalogTiles by editModeViewModel.tiles
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+
     val hiddenIds = availableIds.filter { id ->
         entries.none { it.id == id }
+    }
+
+    val addableNativeTiles = catalogTiles.filter {
+        !it.isCurrent
     }
 
     fun saveLayout() {
@@ -1068,15 +1079,18 @@ private fun RadiantEditableGrid(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = if (editing) {
-                    "Edit and sort"
-                } else {
-                    "Radiant Controls"
-                },
-                color = Color.White,
-                style = MaterialTheme.typography.titleLarge,
-            )
+            // RCOS_HEADER_CLEANUP_V19E
+            // No duplicate heading in normal Control Center.
+            // Spacer keeps the edit button right-aligned.
+            if (editing) {
+                Text(
+                    text = "Edit and sort",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleLarge,
+                )
+            } else {
+                Spacer(Modifier.weight(1f))
+            }
 
             Box(
                 modifier = Modifier
@@ -1383,45 +1397,315 @@ private fun RadiantEditableGrid(
                         color = Color.White,
                     )
 
-                    DropdownMenu(
-                        expanded = showAddMenu,
-                        onDismissRequest = {
-                            showAddMenu = false
-                        },
-                    ) {
-                        if (hiddenIds.isEmpty()) {
-                            DropdownMenuItem(
-                                text = {
-                                    Text("No hidden layout modules")
-                                },
-                                onClick = {
-                                    showAddMenu = false
-                                },
-                            )
-                        }
 
-                        hiddenIds.forEach { id ->
-                            DropdownMenuItem(
-                                text = {
+                    // RCOS_CONTROL_GALLERY_V19D
+                    if (showAddMenu) {
+                        androidx.compose.ui.window.Dialog(
+                            onDismissRequest = { showAddMenu = false },
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(26.dp))
+                                    .background(Color(0xFF191D28))
+                                    .padding(16.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement =
+                                        Arrangement.SpaceBetween,
+                                    verticalAlignment =
+                                        Alignment.CenterVertically,
+                                ) {
                                     Text(
-                                        id.removePrefix("tile:")
-                                            .replaceFirstChar {
-                                                it.uppercase()
+                                        "Add a Control",
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.titleLarge,
+                                    )
+                                    Text(
+                                        "✕",
+                                        color = Color.White,
+                                        modifier = Modifier
+                                            .clip(CircleShape)
+                                            .clickable {
+                                                showAddMenu = false
                                             }
+                                            .padding(8.dp),
                                     )
-                                },
-                                onClick = {
-                                    entries.add(
-                                        radiantDefaultEntry(id)
-                                    )
-                                    saveLayout()
-                                    showAddMenu = false
-                                },
-                            )
+                                }
+
+                                Spacer(Modifier.height(12.dp))
+
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 500.dp)
+                                        .verticalScroll(rememberScrollState()),
+                                    verticalArrangement =
+                                        Arrangement.spacedBy(12.dp),
+                                ) {
+                                    if (catalogTiles.isEmpty()) {
+                                        Text(
+                                            "Loading controls…",
+                                            color = Color.LightGray,
+                                        )
+                                    }
+
+                                    if (addableNativeTiles.isNotEmpty()) {
+                                        Text(
+                                            "Available controls",
+                                            color = Color.White,
+                                            style =
+                                                MaterialTheme.typography.titleMedium,
+                                        )
+
+                                        addableNativeTiles.chunked(3)
+                                            .forEach { group ->
+                                                Row(
+                                                    modifier =
+                                                        Modifier.fillMaxWidth(),
+                                                    horizontalArrangement =
+                                                        Arrangement.spacedBy(8.dp),
+                                                ) {
+                                                    group.forEach { tile ->
+                                                        Column(
+                                                            modifier = Modifier
+                                                                .weight(1f)
+                                                                .height(112.dp)
+                                                                .clip(
+                                                                    RoundedCornerShape(18.dp)
+                                                                )
+                                                                .background(
+                                                                    Color(0xFF2B3140)
+                                                                )
+                                                                .clickable {
+                                                                    val id =
+                                                                        "tile:" +
+                                                                            tile.tileSpec.spec
+
+                                                                    val hidden =
+                                                                        preferences.getStringSet(
+                                                                            "hidden",
+                                                                            emptySet<String>(),
+                                                                        ).orEmpty()
+
+                                                                    preferences.edit()
+                                                                        .putStringSet(
+                                                                            "hidden",
+                                                                            hidden - id,
+                                                                        )
+                                                                        .apply()
+
+                                                                    editModeViewModel.addTile(
+                                                                        tile.tileSpec
+                                                                    )
+                                                                    showAddMenu = false
+                                                                }
+                                                                .padding(8.dp),
+                                                            horizontalAlignment =
+                                                                Alignment.CenterHorizontally,
+                                                            verticalArrangement =
+                                                                Arrangement.Center,
+                                                        ) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(48.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(
+                                                                        Color(0xFF48546D)
+                                                                    ),
+                                                                contentAlignment =
+                                                                    Alignment.Center,
+                                                            ) {
+                                                                RadiantGalleryIconV19D(
+                                                                    tile.icon,
+                                                                    tile.label.text,
+                                                                )
+                                                            }
+
+                                                            Spacer(Modifier.height(7.dp))
+
+                                                            Text(
+                                                                tile.label.text,
+                                                                color = Color.White,
+                                                                style = MaterialTheme
+                                                                    .typography.labelSmall,
+                                                                textAlign =
+                                                                    androidx.compose.ui.text
+                                                                        .style.TextAlign.Center,
+                                                                maxLines = 2,
+                                                            )
+                                                        }
+                                                    }
+                                                    repeat(3 - group.size) {
+                                                        Spacer(
+                                                            Modifier.weight(1f)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                    }
+
+                                    if (hiddenIds.isNotEmpty()) {
+                                        Text(
+                                            "Restore controls",
+                                            color = Color.White,
+                                            style =
+                                                MaterialTheme.typography.titleMedium,
+                                        )
+
+                                        hiddenIds.chunked(3)
+                                            .forEach { group ->
+                                                Row(
+                                                    modifier =
+                                                        Modifier.fillMaxWidth(),
+                                                    horizontalArrangement =
+                                                        Arrangement.spacedBy(8.dp),
+                                                ) {
+                                                    group.forEach { id ->
+                                                        val nativeTile =
+                                                            catalogTiles.firstOrNull {
+                                                                id ==
+                                                                    "tile:" +
+                                                                        it.tileSpec.spec
+                                                            }
+
+                                                        Column(
+                                                            modifier = Modifier
+                                                                .weight(1f)
+                                                                .height(108.dp)
+                                                                .clip(
+                                                                    RoundedCornerShape(18.dp)
+                                                                )
+                                                                .background(
+                                                                    Color(0xFF2B3140)
+                                                                )
+                                                                .clickable {
+                                                                    entries.add(
+                                                                        radiantDefaultEntry(id)
+                                                                    )
+                                                                    saveLayout()
+                                                                    showAddMenu = false
+                                                                }
+                                                                .padding(8.dp),
+                                                            horizontalAlignment =
+                                                                Alignment.CenterHorizontally,
+                                                            verticalArrangement =
+                                                                Arrangement.Center,
+                                                        ) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(44.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(
+                                                                        Color(0xFF48546D)
+                                                                    ),
+                                                                contentAlignment =
+                                                                    Alignment.Center,
+                                                            ) {
+                                                                if (nativeTile != null) {
+                                                                    RadiantGalleryIconV19D(
+                                                                        nativeTile.icon,
+                                                                        nativeTile.label.text,
+                                                                    )
+                                                                } else {
+                                                                    Text(
+                                                                        "+",
+                                                                        color = Color.White,
+                                                                    )
+                                                                }
+                                                            }
+
+                                                            Spacer(Modifier.height(7.dp))
+
+                                                            Text(
+                                                                nativeTile?.label?.text
+                                                                    ?: id.removePrefix("tile:")
+                                                                        .replaceFirstChar {
+                                                                            it.uppercase()
+                                                                        },
+                                                                color = Color.White,
+                                                                style = MaterialTheme
+                                                                    .typography.labelSmall,
+                                                                textAlign =
+                                                                    androidx.compose.ui.text
+                                                                        .style.TextAlign.Center,
+                                                                maxLines = 2,
+                                                            )
+                                                        }
+                                                    }
+                                                    repeat(3 - group.size) {
+                                                        Spacer(
+                                                            Modifier.weight(1f)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                    }
+
+                                    if (
+                                        catalogTiles.isNotEmpty() &&
+                                        addableNativeTiles.isEmpty() &&
+                                        hiddenIds.isEmpty()
+                                    ) {
+                                        Text(
+                                            "All available controls are added",
+                                            color = Color.LightGray,
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
+
                 }
             }
+        }
+    }
+}
+
+
+// RCOS_CONTROL_GALLERY_V19D_ICON
+// RCOS_GALLERY_DRAWABLE_FIX_V19E
+// Load native Android drawables rather than assuming
+// every resource is a Compose-supported vector or bitmap.
+@Composable
+private fun RadiantGalleryIconV19D(
+    icon: com.android.systemui.common.shared.model.Icon,
+    description: String,
+) {
+    val context = LocalContext.current
+
+    when (icon) {
+        is com.android.systemui.common.shared.model.Icon.Resource -> {
+            val drawable = remember(context, icon.resId) {
+                runCatching {
+                    context.getDrawable(icon.resId)
+                }.getOrNull()
+            }
+
+            if (drawable != null) {
+                Icon(
+                    painter = rememberDrawablePainter(drawable),
+                    contentDescription = description,
+                    tint = Color.White,
+                    modifier = Modifier.size(25.dp),
+                )
+            } else {
+                Text(
+                    text = "?",
+                    color = Color.White,
+                )
+            }
+        }
+
+        is com.android.systemui.common.shared.model.Icon.Loaded -> {
+            Icon(
+                painter = rememberDrawablePainter(icon.drawable),
+                contentDescription = description,
+                tint = Color.Unspecified,
+                modifier = Modifier.size(25.dp),
+            )
         }
     }
 }
